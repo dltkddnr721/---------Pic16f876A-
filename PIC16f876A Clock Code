@@ -1,0 +1,478 @@
+PROCESSOR P16F876
+   #INCLUDE <P16F876A.INC>
+
+;변수 선언
+
+   VARIABLE W_TEMP = 20H 
+   VARIABLE STATUS_TEMP =21H
+   VARIABLE INT_CNT = 22H		;인터럽트 계수를 위한 변수1
+   VARIABLE D_10SEC = 23H		;10초를 계수하기 위한 변수
+   VARIABLE DISP_CNT = 24H
+   VARIABLE D_1SEC = 25H		;1초를 계수하기 위한 변수
+   VARIABLE MINUTE_1 = 36H	;1분을 계수하기 위한 변수
+   VARIABLE MINUTE_10 = 37H	;10분을 계수하기 위한 변수
+   VARIABLE HOUR_1 = 28H		;1시간을 계수하기 위한 변수
+   VARIABLE HOUR_10 = 29H		;10시간을 계수하기 위한 변수
+   VARIABLE TEST =    30H		;7-SGMENT의 ‘g‘ BIT를 저장하기위한 변수
+   VARIABLE INT_CNT2 = 31H	;인터럽트 계수를 위한 변수2
+
+   VARIABLE DATE1=32H		;日을 계수하기위한 변수1
+   VARIABLE DATE2=33H		;日을 계수하기위한 변수2
+   VARIABLE DATE3=34H		;月을 계수하기위한 변수1
+   VARIABLE DATE4=35H		;月을 계수하기위한 변수1
+
+   VARIABLE DBUF1=26H
+   VARIABLE DBUF2 =27H
+   VARIABLE IF_TEN_MONTH = 2AH
+   VARIABLE MODE_SELECT = 2BH		;PUSH버튼에 의한 분기를 위해 PORTB를 저장하는 변수
+
+   VARIABLE BUZZ_BIT = 40H			;정시 SET되어 알람을 울리도록 하기위한 변수
+
+
+   ORG 0	
+   GOTO START_UP       
+   
+   ORG 4H          ; ISR 시작번지
+   MOVWF W_TEMP       ;W레지스터 백업 MOVF같은 명령어는 STATUS의 Z플래그에 영향을 주기때문에 최대한 사용 안함 
+   SWAPF STATUS,W       ;STATUS를 SWAPF를 통해반전저장한다음 CALL 다음에 다시 반전하여 꺼냄
+   CALL DISP          
+   SWAPF STATUS_TEMP,W    ; 다시 SWAPF를 하여 반전시켰던 STATUS레지스터내용을 복구
+   MOVWF STATUS      ; WORKING레지스터값을 STATUS로 복귀시킴
+   SWAPF W_TEMP,F       ; W_TEMP도 다시 복귀시킴
+   SWAPF W_TEMP,W
+   BCF INTCON,2       ; OVERFLOW 인터럽트 플래그 비트
+   RETFIE           ; RETURN과 동시에 인터럽트를 EANBLE시키는 명령어
+
+
+
+DISP
+   INCF INT_CNT
+   RLF DISP_CNT,1
+   BTFSC DISP_CNT,0
+   GOTO DISP4
+   
+   BTFSC DISP_CNT,1
+   GOTO DISP3
+
+   BTFSC DISP_CNT,2
+   GOTO DISP2
+
+   BTFSC DISP_CNT,3
+   GOTO DISP1
+   CLRF DISP_CNT
+   BSF DISP_CNT,0
+   GOTO DISP4
+   
+DISP1	;DGIT1의 출력을 담당하는 루프
+   CLRF PORTC
+   BCF PORTA,1
+   BSF PORTA,2        
+   BCF PORTA,3
+   BTFSC PORTB,3	;SW1을 누르지않으면 시간(HOUR10)이 출력된다
+   MOVF HOUR_10,W
+   BTFSS PORTB,3	;SW1을 누르면 날짜(DATE1)이 출력된다
+   MOVF DATE1,W
+   CALL CONV		;LOOK-UP TABLE에서 7-SEGMENT 숫자로 변환한다
+   MOVWF PORTC	;PORTC에 출력
+   
+   ANDLW B'00010000'    ;DON'T CARE항에 7_SEGMENT의 G에 해당하는정보를 넣었음, 마스킹과정
+   MOVWF TEST
+   BTFSC TEST,4      ;G에 해당하는 BIT가 1이면 PORTA,1에 1을 출력하여 G를 표시한다
+   BSF PORTA,1
+   BCF PORTA,3
+   RETURN
+
+DISP2		;DGIT2의 출력을 담당하는 루프
+   CLRF PORTC   
+   BCF PORTA,1
+   BCF PORTA,2
+   BSF PORTB,2
+   BTFSC PORTB,3
+   MOVF HOUR_1,W
+   BTFSS PORTB,3
+   MOVF DATE2,W
+   CALL CONV
+   MOVWF PORTC
+   ANDLW B'00010000'    
+   MOVWF TEST
+   BTFSC TEST,4      
+   BSF PORTA,1
+   RETURN
+
+CONV ANDLW 0FH	;입력 받은 2진수를 7-SEGMENT 출력으로 변환하는 LOOP-UP TABLE
+   ADDWF PCL,F
+   
+   RETLW B'11100111' ;0(PCL)
+   RETLW B'01100000' ;1(PCL+1)
+   RETLW B'11010011' ;2(PCL+2)...
+   RETLW B'11110010' ;3   RA1
+   RETLW B'01110100' ;4     RA1
+   RETLW B'10110110' ;5   RA1
+   RETLW B'10110111' ;6   RA1
+   RETLW B'11100100' ;7
+   RETLW B'11110111' ;8   RA1
+   RETLW B'11110100' ;9   RA1
+   RETLW B'11111101' ;-
+   RETLW B'11111111' ;' '
+   RETLW B'11100101' ;C
+   RETLW B'11111110' ;.
+   RETLW B'01100001' ;E
+   RETLW B'01110001' ;F
+   
+DISP3 		;DGIT3의 출력을 담당하는 루프
+   CLRF PORTC               
+   BCF PORTA,1
+   BCF PORTB,2
+   BSF PORTB,1
+   BTFSC PORTB,3
+   MOVF MINUTE_10,W
+   BTFSS PORTB,3
+   MOVF DATE3,W
+   CALL CONV
+   MOVWF PORTC
+   
+   ANDLW B'00010000'   
+   MOVWF TEST
+   BTFSC TEST,4      
+   BSF PORTA,1
+   RETURN
+
+DISP4 		;DGIT4의 출력을 담당하는 루프
+   CLRF PORTC           
+   BCF PORTA,1
+   BCF PORTB,1 ;ON
+   BSF PORTA,3
+   BTFSC PORTB,3
+   MOVF MINUTE_1,W
+   BTFSS PORTB,3
+   MOVF DATE4,W
+   CALL CONV
+   MOVWF PORTC
+   
+   ANDLW B'00010000'    
+   MOVWF TEST
+   BTFSC TEST,4      
+   BSF PORTA,1
+   RETURN
+
+
+
+START_UP         
+   BSF STATUS,RP0
+   MOVLW B'00000000'
+   MOVWF TRISA
+   MOVLW B'00111000'
+   MOVWF TRISB
+   MOVLW B'00000000'
+   MOVWF TRISC
+   MOVLW B'00000111'
+   MOVWF ADCON1
+   MOVLW B'00000010'
+   MOVWF OPTION_REG
+   BCF STATUS,RP0
+   BSF INTCON,5
+   BSF INTCON,7
+   BCF PORTB,7
+   GOTO MAIN_ST      
+   
+MAIN_ST          ; 사용할 변수에 대해 초기화를 진행하는 루프
+   CLRF INT_CNT        
+   CLRF D_10SEC      
+   CLRF D_1SEC	
+   CLRF MINUTE_1
+   CLRF MINUTE_10
+   CLRF HOUR_10
+   CLRF HOUR_1
+   CLRF DATE1
+   CLRF DATE2
+   CLRF DATE3
+   CLRF DATE4
+   CLRF IF_TEN_MONTH 
+
+M_LOOP             ;인터럽트 횟수 확인하는 루프
+   MOVLW .250		;250번 세아리게 되면 0.5msec인식 -> 이게 두번들어오면 1초가 된다
+   SUBWF INT_CNT,W    ;250되면 1초 인식
+   BTFSS STATUS,Z       ; 뺀 값이 0이면 CK_LOOP로 간다
+   GOTO XLOOP       ;XLOOP로 가서PORTA,4의 값을 읽고 다시M_LOOP로 돌아온다
+   GOTO CK_LOOP
+
+CK_LOOP	;1초, 1분, 1시간, 1일, 1달을 세는 루프ㄴ
+   CLRF INT_CNT       ;250이 된 INT_CNT는 초기화된다
+   INCF INT_CNT2     ;INT_CNT2가 2가 되면 CNT가 500번(인터럽트 500번 반복)되어 1초가 된다
+   MOVLW .2
+   SUBWF INT_CNT2,W
+   BTFSS STATUS,Z
+   GOTO XLOOP	;INT_CNT가 1초를 만들지 못하면 다시 XLOOP으로 돌아간다
+
+   CLRF INT_CNT2
+   INCF D_1SEC       ;1초 증가
+   MOVLW .10     
+   SUBWF D_1SEC,W
+   BTFSS STATUS,Z      ;D_1EC가 10초를 만들면 D_10SEC을 증가시키도록 분기한다.
+   GOTO XLOOP      
+   
+   CLRF D_1SEC      
+   INCF D_10SEC       ;10초 계수
+   MOVLW .6      
+   SUBWF D_10SEC,W    
+   BTFSS STATUS,Z      ;D_10EC가 60초를 만들면 MINUTE_1을 증가시키도록 분기한다.
+   GOTO XLOOP
+   
+   CLRF D_10SEC
+   INCF MINUTE_1     ;1분 계수
+   MOVLW .10
+   SUBWF MINUTE_1,W 	;MINUTE_1가 10분을 만들면 MINUTE_10을 증가시키도록 분기한다
+   BTFSS STATUS,Z
+   GOTO XLOOP
+   
+   CLRF MINUTE_1
+   INCF MINUTE_10	;10분 게수
+   MOVLW .6 
+   SUBWF MINUTE_10,W	;MINUTE_1가 60분을 만들면 HOUR_1을 증가시키도록 분기한다
+   BTFSS STATUS,Z
+   GOTO XLOOP
+   
+   CLRF MINUTE_10
+   INCF HOUR_1
+   INCF BUZZ_BIT	;정각이되면 1을 저장하는 알람기능의 BUZZ_BIT
+   CALL TIME_END1		;24시간에 초기화하기위해 매시간마다 24시를 체크하는 루프 CALL 
+   MOVLW .10            
+   SUBWF HOUR_1,W		;HOUR_1이 10시간을 만들면 HOUR_10을 증가시키도록 분기한다
+   BTFSS STATUS,Z
+   GOTO XLOOP
+   
+
+   CLRF HOUR_1	
+   INCF HOUR_10	;10시간 계수
+   GOTO XLOOP
+   
+TIME_END1	;HOUR_1이 4임을 체크하는 루프
+   MOVLW .4 
+   SUBWF HOUR_1,W
+   BTFSC STATUS,Z
+   CALL TIME_END2	;HOUR1이 4가 되면 HOUR_10을 검사한다
+   RETURN 
+
+TIME_END2	;;HOUR_10이 2임을 체크하는 루프
+   ADDLW .1 
+   MOVLW .2 
+   SUBWF HOUR_10,W
+   BTFSS STATUS,Z	;24시이면 시간을 초기화 하고 날짜를 하루 증가시키는 루프로 분기시킨다
+   RETURN ; 
+   CLRF HOUR_1	;시간 초기화
+   CLRF HOUR_10	;시간 초기화
+   INCF DATE4		;1일 증가
+   GOTO XLOOP
+
+   MOVLW .10
+   SUBWF DATE4,W	
+   BTFSS STATUS,Z	;10일이 계수되면 DATE3 증가하도록 분기
+   GOTO XLOOP
+
+   CLRF DATE4
+   BSF DATE4,0
+   INCF DATE3
+   MOVLW .3
+   SUBWF DATE3,W
+   BTFSS STATUS,Z	;30일이 계수되면 1달을 증가하도록 분기
+   GOTO XLOOP
+   
+   CLRF DATE3  
+   INCF DATE2   
+   MOVLW .10
+   SUBWF DATE2,W
+   BTFSS STATUS,Z	
+   GOTO XLOOP      
+
+   CLRF DATE2      
+   INCF DATE1      
+   
+   GOTO XLOOP
+   MOVLW .2
+   SUBWF DATE2,W	
+   BTFSS STATUS,Z	;10달이 계수되면 DATE1증가하도록 분기
+   CLRF DATE1
+   CLRF DATE2	;12달이 계수 되면 月초기화
+
+
+
+XLOOP
+   CALL MODE
+   GOTO M_LOOP      
+      
+MODE		;PUSH버튼의 조합에 따라 다른 기능을 수행하도록 분기시키는 루프
+   BSF PORTA,4
+   CALL BUZZ		;정시가 되면 알람을 울리는 루프를 CALL한다
+   CLRF BUZZ_BIT 
+   MOVF PORTB,W
+   ANDLW B'00111000'		;PUSH버튼에 해당하는 입력을 추리기위한 마스킹
+   MOVWF MODE_SELECT
+   RRF MODE_SELECT,1	;LOOK-UP TABLE을 활용하기위해 BIT를 우측으로 정렬
+   RRF MODE_SELECT,1
+   RRF MODE_SELECT,0
+   ANDLW 07H		;LOOP-UP TABLE 방법으로 PUSH버튼 입력에 따라 분기
+   ADDWF PCL,F
+   GOTO DATE_INSERT ;0	;초기설정 날짜로 셋팅하는 루프로 분기 
+   GOTO M_LOOP;1
+   GOTO MON_SET;2		;月증가하는 루프로 분기
+   GOTO HOUR_SET;3		;시간을 증가하는 루프로 분기
+   GOTO DATE_SET;4		;日을 증가하는 루프로 분기
+   GOTO MIN_SET;5		;분을 증가하는 루프로 분기
+   GOTO M_LOOP;6		
+   GOTO M_LOOP;7
+BUZZ		;정시를 확인하고 알람을 울리는 루프
+   BTFSS BUZZ_BIT,0		;정시에 BUZZ_BIT가 SET되면 PORTA,4에 0출력 
+   RETURN   
+   BCF PORTA,4	;알람 ON
+   CALL DELAY2	;일정시간동안 알람 지속
+   BSF PORTA,4	;알람 OFF
+   RETURN
+
+DATE_SET	;PUSH버튼의 입력을 받아 日을 증가시키는 루프
+   BTFSC PORTB,4
+   GOTO M_LOOP
+   CALL DELAY	;날짜가 일시에 많이 증가하는 것을 방지
+   INCF DATE4
+   MOVLW .10
+   SUBWF DATE4,W
+   BTFSS STATUS,Z		;日의 1의 자리가 10이 되면 日의 10의 자리가 증가
+   GOTO M_LOOP
+   CLRF DATE4
+   INCF DATE3	
+
+   MOVLW .3   
+   SUBWF DATE3,W
+   BTFSS STATUS,Z	;30일이 되면 日 초기화
+   
+   GOTO M_LOOP
+   CLRF DATE3   
+   GOTO M_LOOP
+
+MIN_SET	;PUSH버튼의 입력을 받아 분을 증가시키는 루프
+   BTFSC PORTB,4
+   GOTO M_LOOP
+   CALL DELAY
+   INCF MINUTE_1
+   MOVLW .10
+   SUBWF MINUTE_1,W
+   BTFSS STATUS,Z	;분의 1의 자리가 10이 되면 분의 10의 자리가 증가
+   GOTO M_LOOP
+   CLRF MINUTE_1
+   INCF MINUTE_10
+
+   MOVLW .6      
+   SUBWF MINUTE_10,W	;60분이 되면 분 초기화
+   BTFSS STATUS,Z
+   
+   GOTO M_LOOP
+   CLRF MINUTE_10  
+   GOTO M_LOOP
+   
+HOUR_SET		;PUSH버튼의 입력을 받아 시간을 증가시키는 루프
+   BTFSC PORTB,5
+   GOTO M_LOOP
+   CALL DELAY
+   INCF HOUR_1
+   CALL TIME_END11 ;24시간이 되면 초기화시키는 루프 CALL
+   MOVLW .10            
+   SUBWF HOUR_1,W
+   BTFSS STATUS,Z	;10시간이 계수되면 시간의 10의 자리를 증가
+   GOTO XLOOP
+   
+   CLRF HOUR_1
+   INCF HOUR_10
+   GOTO XLOOP
+   
+TIME_END11 ;HOUR_1이 4인지 확인하는 루프
+   MOVLW .4 
+   SUBWF HOUR_1,W
+   BTFSC STATUS,Z ;HOUR_1이 4이면 HOUR_10이 2인지 확인하는 루프를 CALL
+   CALL TIME_END22
+   RETURN ;아니면 원주소로 복귀
+
+TIME_END22 ;HOUR_10이 2인지 확인하는 루프
+   ADDLW .1 
+   MOVLW .2 
+   SUBWF HOUR_10,W
+   BTFSS STATUS,Z	;HOUR_10이 2이면 시간을 00으로 초기화
+   RETURN ; 
+   CLRF HOUR_1
+   CLRF HOUR_10
+   INCF DATE4
+   GOTO XLOOP
+   
+MON_SET	;PORTB의 입력에 라 月을 증가시키는 루프
+   BTFSC PORTB,3
+   GOTO M_LOOP
+   CALL DELAY
+   
+   INCF DATE2
+   BTFSC IF_TEN_MONTH,0 
+   GOTO   TEN_MONTH_LOOP   
+   MOVLW .10
+   SUBWF DATE2,W
+   BTFSS STATUS,Z
+   GOTO M_LOOP
+   
+   BSF   IF_TEN_MONTH,0   
+   INCF DATE1      
+   CLRF DATE2         
+   GOTO M_LOOP
+         
+TEN_MONTH_LOOP  
+   MOVLW   .3
+   SUBWF   DATE2,W
+   BTFSS   STATUS,Z   
+   GOTO      M_LOOP
+   CLRF      DATE2      
+   CLRF      DATE1     
+   CLRF      IF_TEN_MONTH   
+   BSF      DATE2,0   
+   GOTO      M_LOOP
+
+
+DELAY   
+      MOVLW   .200   
+      MOVWF   DBUF1
+LP1      MOVLW   .200     
+      MOVWF   DBUF2
+LP2      NOP
+
+      DECFSZ   DBUF2, F
+      GOTO   LP2
+      DECFSZ   DBUF1, F  
+      GOTO   LP1      
+      RETURN
+DELAY2  
+      MOVLW   .40   
+      MOVWF   DBUF1
+LP11      MOVLW   .30     
+      MOVWF   DBUF2
+LP22      NOP
+      DECFSZ   DBUF2, F
+      GOTO   LP22
+      DECFSZ   DBUF1, F   
+      GOTO   LP11      
+      RETURN
+      
+DATE_INSERT		;원하는 초기값 날짜를 설정할 수 있는 루프
+   MOVLW .1
+   MOVWF HOUR_10
+   MOVLW .0
+   MOVWF HOUR_1
+   MOVLW .0
+   MOVWF MINUTE_1
+   MOVLW .0
+   MOVWF MINUTE_10
+   MOVLW .0
+   MOVWF DATE1
+   MOVLW .6
+   MOVWF DATE2
+   MOVLW .2
+   MOVWF DATE3
+   MOVLW .0
+   MOVWF DATE4
+   GOTO M_LOOP
+
+
+END
